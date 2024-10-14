@@ -50,7 +50,6 @@ void AHuman::BeginPlay()
 	if (m_pSphereComp != NULL) {
 		m_pSphereComp->OnComponentBeginOverlap.AddDynamic(this, &AHuman::ActorOnOverlapBeginComponent);
 	}
-
 }
 
 // Called every frame
