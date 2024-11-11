@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Human.h"
+#include "Ball.h"
 #include "MyCharacter.generated.h"
 
 /**
@@ -12,6 +13,7 @@
  //前方宣言
 class USpringArmComponent;
 class UCameraComponent;
+class UAnimMontage;
 
 UCLASS()
 class HANDBALLER_API AMyCharacter : public AHuman
@@ -54,7 +56,8 @@ private:
 	//入力バインド ジャンプ
 	virtual void JumpStart();
 
-	virtual void Shoot();
+	//入力バインド 投げる
+	virtual void Throw();
 	//ジャンプ処理
 	virtual void UpdateJump(float DeltaTime);
 
@@ -80,7 +83,18 @@ private:
 
 public:
 	//------------------ボール処理-------------------------
-	//
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball")
+	class UAnimMontage* ThrowBallMontage;
+
+	UFUNCTION(BlueprintCallable, Category = "Ball")
+	void ThrowBall();
+
+	UFUNCTION(BlueprintCallable, Category = "Ball")
+	void ChangeBallFlag();
+
+
+
+	//------------------ボール処理-------------------------
 
 private:
 	//UPRPPERTYにすることで、ブループリント上で変数の確認、編集などができる
@@ -92,6 +106,7 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = camera, meta =
 		(AllowPrivateAccess = "true"))
 		UCameraComponent* m_pCamera;		//カメラ
+
 
 
 	UPROPERTY(EditAnywhere, Category = "Camera")
@@ -107,39 +122,52 @@ protected:
 	void ActorOnOverlapBeginComponent(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
+	UFUNCTION()
+		void OnSphereOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+			UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool m_bOverlappedCPU;	//CPUとOverlapしているかどうか
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		AActor* m_Overlaped_CPU;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		ABall* m_pBall;
+
+	//UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "vector")
+	//FVector fVector;				
+
+
 protected:
 	// プレイヤーの定数--------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
-	float GRAVITY;				// 重力
+		float GRAVITY;				// 重力
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
-	float FALLSPEED_MAX;		// Z方向の最大速度
+		float FALLSPEED_MAX;		// Z方向の最大速度
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
-	float MOVESPEED_MAX;		// X-Y方向の最大移動速度
+		float MOVESPEED_MAX;		// X-Y方向の最大移動速度
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
+		float THROW_POWER;				// 投げる力
 
 
 	// 移動						
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_INVALIDRANGE;		// 入力の無効範囲
+		float MOVE_INVALIDRANGE;		// 入力の無効範囲
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_SPEED_MAX;		// 移動速度(最大)
+		float MOVE_SPEED_MAX;		// 移動速度(最大)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_SPEED_MIDDLE;		// 移動速度(第二段階)
+		float MOVE_SPEED_MIDDLE;		// 移動速度(第二段階)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_SPEED_MIN;		// 移動速度(第一段階)	
+		float MOVE_SPEED_MIN;		// 移動速度(第一段階)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_SPEED_FALLING;	// 移動速度(空中時)	
+		float MOVE_SPEED_FALLING;	// 移動速度(空中時)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_ROTATE_MAX;		// 回転速度(空中時)	
+		float MOVE_ROTATE_MAX;		// 回転速度(空中時)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_ROTATE_MIDDLE;	// 回転速度(空中時)	
+		float MOVE_ROTATE_MIDDLE;	// 回転速度(空中時)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
-	float MOVE_ROTATE_MIN;		// 回転速度(空中時)	
+		float MOVE_ROTATE_MIN;		// 回転速度(空中時)	
 
 
 };

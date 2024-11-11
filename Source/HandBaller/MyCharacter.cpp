@@ -2,10 +2,16 @@
 
 #include "MyCharacter.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Components/SphereComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Camera/CameraComponent.h"
 #include "TimerManager.h"
+#include "HAL/PlatformProcess.h"
+#include "GameFramework/ProjectileMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/KismetMathLibrary.h"								// 計算処理のライブラリ
+
+
 
 #define JUMP_HEIGHT (m_jumpTime * m_jumpTime * (-m_gravity) / 2 + (m_jumpTime * m_jumpPower))
 #define SET_JUMP_TIME 0.5
@@ -28,6 +34,7 @@ AMyCharacter::AMyCharacter()
 	, GRAVITY(-100.f)
 	, FALLSPEED_MAX(-3000.f)
 	, MOVESPEED_MAX(1500.f)
+	, THROW_POWER(2000.f)
 	, MOVE_INVALIDRANGE(0.001f)
 	, MOVE_SPEED_MAX(200.f)
 	, MOVE_SPEED_MIDDLE(150.f)
@@ -41,12 +48,12 @@ AMyCharacter::AMyCharacter()
 	//デフォルトプレイヤーとして設定
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 
-	// カプセルコンポーネント
-	if (GetCapsuleComponent() != nullptr)
-	{
-		GetCapsuleComponent()->SetCapsuleHalfHeight(150.f);
-		GetCapsuleComponent()->SetCapsuleRadius(42.f);
-	}
+	//// カプセルコンポーネント
+	//if (GetCapsuleComponent() != nullptr)
+	//{
+	//	GetCapsuleComponent()->SetCapsuleHalfHeight(150.f);
+	//	GetCapsuleComponent()->SetCapsuleRadius(42.f);
+	//}
 
 	//スプリングアームのオブジェクトを生成
 	if (m_pSpringArm == NULL)
@@ -58,18 +65,18 @@ AMyCharacter::AMyCharacter()
 		//アームの長さを設定
 		m_pSpringArm->TargetArmLength = 400.f;
 		// 位置と回転
-		m_pSpringArm->SetRelativeLocationAndRotation(FVector(0.f, 0.f, 100.f), FQuat(FRotator(-10.f, 0.f, 0.f)));	// 位置と回転
+		m_pSpringArm->SetRelativeLocationAndRotation(FVector(0.f, 0.f, 100.f), FQuat(FRotator(0.f, 0.f, 0.f)));	// 位置と回転
 
-		//カメラのコリジョンテストを行うか設定
-		m_pSpringArm->bDoCollisionTest = false;
-		//カメラ追従ラグを使うかを設定
-		m_pSpringArm->bEnableCameraLag = false;
-		//カメラ追従ラグの速度を設定
-		m_pSpringArm->CameraLagSpeed = 10.f;
-		//カメラ回転ラグを使うかを設定
-		m_pSpringArm->bEnableCameraRotationLag = false;
-		//カメラ回転ラグの速度を設定
-		m_pSpringArm->CameraRotationLagSpeed = 10.f;
+		////カメラのコリジョンテストを行うか設定
+		//m_pSpringArm->bDoCollisionTest = false;
+		////カメラ追従ラグを使うかを設定
+		//m_pSpringArm->bEnableCameraLag = false;
+		////カメラ追従ラグの速度を設定
+		//m_pSpringArm->CameraLagSpeed = 10.f;
+		////カメラ回転ラグを使うかを設定
+		//m_pSpringArm->bEnableCameraRotationLag = false;
+		////カメラ回転ラグの速度を設定
+		//m_pSpringArm->CameraRotationLagSpeed = 10.f;
 	}
 
 	//カメラのオブジェクと生成
@@ -82,14 +89,8 @@ AMyCharacter::AMyCharacter()
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 
-	//// アローコンポーネントをメッシュにアタッチする
-	//m_pArrowComp = CreateDefaultSubobject<UArrowComponent>(TEXT("ArrowComp"));
-	//check(m_pArrowComp);
-	//m_pArrowComp->SetupAttachment(GetMesh());
-	//m_pArrowComp->SetRelativeRotation({ 0.f, 90.f, 0.f });
-
-
-
+	//m_pSphereCompにオーバーラップした時の処理を登録
+	m_pSphereComp->OnComponentBeginOverlap.AddDynamic(this, &AMyCharacter::OnSphereOverlapBegin);
 
 	BaseTurnRate = 75.f;
 }
@@ -139,8 +140,8 @@ void AMyCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	//ジャンプ
 	InputComponent->BindAction("Jump", IE_Pressed, this, &AMyCharacter::JumpStart);
 
-	//シュート
-	InputComponent->BindAction("shoot", IE_Pressed, this, &AMyCharacter::Shoot);
+	//投げる
+	InputComponent->BindAction("Throw", IE_Pressed, this, &AMyCharacter::Throw);
 	//タックル
 	InputComponent->BindAction("Tackle", IE_Pressed, this, &AMyCharacter::TackleStart);
 
@@ -237,17 +238,7 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_MIN * CorrectionValue;
 		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_MIN * CorrectionValue;
 		RotateVelocity = MOVE_ROTATE_MIN;
-	}
-
-	//// 重力の反映
-	//NewVelocity = AddGravity(NewVelocity);
-
-	//if (Isjump)
-	//{
-	//	NewVelocity = AddJumpAcceletion(NewVelocity);
-	//	Isjump = false;
-	//}
-	
+	}	
 
 
 	// 値の反映
@@ -258,15 +249,10 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 	USkeletalMeshComponent* pMeshComp = GetMesh();
 	FRotator rot = pMeshComp->GetRelativeRotation();
 
-	// 移動している場合
-	if (m_moveVec.Size2D() > 0.f)
-	{
-		//// 移動方向の角度取得
-		//float moveAngleDeg = FMath::RadiansToDegrees(atan2(m_moveVec.X, m_moveVec.Y));
 
-		//// 新しい角度の計算
-		//float newYaw = moveAngleDeg + GetBaseRotationOffsetRotator().Yaw + m_pSpringArm->GetRelativeRotation().Yaw;
-		//float difference = newYaw - rot.Yaw;
+	// 移動している場合
+	if (m_moveVec.Size2D() > 0.5f)
+	{
 
 		//アークタンジェントを使ってコントローラーの入力方向がなす角度を求める
 		float moveAngleDeg = atan2(m_moveVec.X, m_moveVec.Y);
@@ -274,7 +260,7 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 		float angleDeg = FMath::RadiansToDegrees(moveAngleDeg);
 
 		//入力した角度 + メッシュの回転角度 + Actorに対して回転しているSpringArmの相対角度
-		float newYaw = angleDeg + GetBaseRotationOffsetRotator().Yaw + m_pSpringArm->GetRelativeRotation().Yaw;
+		float newYaw = angleDeg + GetBaseRotationOffsetRotator().Yaw + m_pSpringArm->GetRelativeRotation().Yaw + 180.0;
 
 		float difference = newYaw - rot.Yaw;
 
@@ -297,48 +283,6 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 		// 反映
 		pMeshComp->SetRelativeRotation(FRotator(rot.Pitch, newYaw, rot.Roll));
 	}
-
-
-	////移動入力がある場合
-	//if (!m_charaMoveInput.IsZero() && (DeltaTime != 0.0f))
-	//{
-	//	//入力に合わせて、Actorを左右前後に移動
-	//	USpringArmComponent* pSpringArm = m_pSpringArm;
-	//	if (pSpringArm != NULL)
-	//	{
-	//		FVector NewLocation = GetActorLocation();
-
-	//		//キャラクターの移動
-	//		{
-	//			//SpringArmが動く方向に、入力による移動量をPawnMoveComponentに渡す
-	//			FVector forwardVec = pSpringArm->GetForwardVector();
-	//			AddMovementInput(forwardVec, m_charaMoveInput.Y * m_moveSpeed);
-	//			FVector rightVec = pSpringArm->GetRightVector();
-	//			AddMovementInput(rightVec, m_charaMoveInput.X * m_moveSpeed);
-
-	//		}
-
-	//		//移動するキャラクターの回転
-	//		{
-	//			//角度はDegreeの角度の範囲で表記(-180 ~ 180)
-	//			USkeletalMeshComponent* pMeshComp = GetMesh();
-	//			if (pMeshComp != NULL)
-	//			{
-	//				//アークタンジェントを使ってコントローラーの入力方向がなす角度を求める
-	//				float angle = atan2(m_charaMoveInput.X, m_charaMoveInput.Y);
-	//				//Radian値をDegreeに変換
-	//				float angleDeg = FMath::RadiansToDegrees(angle);
-
-	//				//入力した角度 + メッシュの回転角度 + Actorに対して回転しているSpringArmの相対角度
-	//				float newYaw = angleDeg + GetBaseRotationOffsetRotator().Yaw + pSpringArm->GetRelativeRotation().Yaw;
-
-	//				pMeshComp->SetRelativeRotation(FRotator(pMeshComp->GetRelativeRotation().Pitch, newYaw, pMeshComp->GetRelativeRotation().Roll));
-
-	//			}
-	//		}
-	//	}
-	//}
-
 }
 
 //
@@ -393,6 +337,140 @@ void AMyCharacter::UpdateJump(float _deltaTime)
 	}
 }
 
+//
+//担当：海北
+//
+//ボールを投げるInputイベントが呼ばれた時の処理
+void AMyCharacter::Throw()
+{
+	//ボールを持っていないなら以降の処理を行わない
+	if (!m_bIsHolding){
+		return;
+	}
+
+	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+	{
+		//投げるアニメーションを再生
+		AnimInstance->Montage_Play(ThrowBallMontage);
+	}
+
+}
+
+
+//
+//担当：海北
+//
+//ボールを投げる処理
+void AMyCharacter::ThrowBall()
+{
+	//FVector fVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetForwardVector().Rotation());
+	//FVector fVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
+
+	//FVector fVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
+	FVector fThrowVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
+
+	FRotator fRotator(-30, 0, 0);
+	FVector fVector = fRotator.RotateVector(FVector(fThrowVector.X, fThrowVector.Y, 0.0f));
+	//FVector fVector = UKismetMathLibrary::MakeVector(30.f, m_pSpringArm->GetComponentRotation().Yaw, 0.f);
+
+	//fVector = fVector.RotateAngleAxis(50, (FVector(0, 0, 1)));
+	fVector *= THROW_POWER;
+
+	m_bThrowAnim = true;
+
+	m_pBall->m_pStaticMeshComp->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	m_pBall->ProjectileMovementComponent->SetActive(true);
+
+	m_pBall->m_pStaticMeshComp->SetSimulatePhysics(true);
+	m_pBall->m_pSphereComp->SetSimulatePhysics(false);
+	//m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+	m_pBall->ProjectileMovementComponent->SetUpdatedComponent(m_pBall->GetRootComponent());
+	m_pBall->m_pStaticMeshComp->SetPhysicsLinearVelocity(FVector::ZeroVector);
+
+	//m_pBall->ProjectileMovementComponent->SetVelocityInLocalSpace(fVector);
+
+
+
+
+	//m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	//m_pBall->SetActorEnableCollision(true);
+
+	//m_pBall->m_pStaticMeshComp->SetSimulatePhysics(true);
+	//m_pBall->m_pSphereComp->SetSimulatePhysics(false);
+
+	//m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	//m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+
+
+
+	//m_pBall->m_pStaticMeshComp->SetSimulatePhysics(true);
+	//m_pBall->m_pSphereComp->SetSimulatePhysics(true);
+	//m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	//m_pBall->SetActorEnableCollision(true);
+
+	
+	//SetActorRotation(FRotator(0.0f, m_pSpringArm->GetTargetRotation().Yaw, 0.0f), ETeleportType::ResetPhysics);
+	m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+
+	m_pBall->m_pStaticMeshComp->AddImpulse(fVector);
+	//m_pBall->m_pStaticMeshComp->AddImpulse
+}
+
+
+//担当：海北
+//
+//ボールを投げた後のフラグ変更処理
+void AMyCharacter::ChangeBallFlag()
+{
+	//m_bIsHolding = false;
+	m_bCanTackle = true;
+	m_bThrowAnim = false;
+	m_bCanHold = true;
+
+	//m_pBall->SetActorEnableCollision(true);
+
+	m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+}
+
+
+//
+//担当：海北
+//
+//スフィアコンポーネントにオーバーラップ接触し始めた時に呼ばれるイベント関数を登録
+void AMyCharacter::OnSphereOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
+	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	//ボール保持時とタックル中は、以下の処理を行わない
+	if (m_bIsHolding && m_bTackle){
+		return;
+	}
+
+	//オーバーラップした際に実行したいイベント
+	if (OtherActor && (OtherActor != this) && OtherComp) {
+		//オーバーラップしたのがCPUのときのみ反応させたい
+		if (OtherActor->ActorHasTag("Ball")) {
+			//Ballを取得
+			m_pBall = Cast<ABall>(OtherActor);
+			m_pBall->AttachToComponent(GetMesh(), { EAttachmentRule::SnapToTarget, true }, "BallCatch");
+
+			//ボールの挙動、コリジョンを変更
+			m_pBall->ProjectileMovementComponent->SetActive(false);
+			m_pBall->m_pStaticMeshComp->SetSimulatePhysics(false);
+			m_pBall->m_pSphereComp->SetSimulatePhysics(false);
+			m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+			//m_pBall->SetActorEnableCollision(false);
+
+			//フラグを設定
+			m_bIsHolding = true;
+			m_bCanHold = false;
+			m_bCanTackle = false;
+		}
+	}
+}
 
 //
 //担当：海北
@@ -423,20 +501,13 @@ void AMyCharacter::Chara_MoveForward(const float _axisValue)
 
 	if ((Controller != NULL) && (_axisValue != 0.0f))
 	{
+		// デッドゾーンは無効
+		bool isDeadZone = -MOVE_INVALIDRANGE <= _axisValue && _axisValue <= MOVE_INVALIDRANGE;
+		m_moveVec.Y = isDeadZone ? 0.f : _axisValue;
+
 		m_moveVec.Y = _axisValue;
 
-		////コントローラーの入力方向を取得する
-		//const FRotator Rotation = Controller->GetControlRotation();
-		//const FRotator YawRotation(0, Rotation.Yaw, 0);
-
-		////前方向の向きを取得する
-		//const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		//
-		////繰り出す
-		//AddMovementInput(Direction, _axisValue);
 	}
-	//m_charaMoveInput.Y = FMath::Clamp(_axisValue, -1.0f, 10000.0f) * 10000.0f;
-
 }
 
 
@@ -451,21 +522,12 @@ void AMyCharacter::Chara_MoveRight(float _axisValue)
 
 	if ((Controller != NULL) && (_axisValue != 0.0f))
 	{
+		// デッドゾーンは無効
+		bool isDeadZone = -MOVE_INVALIDRANGE <= _axisValue && _axisValue <= MOVE_INVALIDRANGE;
+		m_moveVec.X = isDeadZone ? 0.f : _axisValue;
+
 		m_moveVec.X = _axisValue;
-
-		////コントローラーの入力方向を取得する
-		//const FRotator Rotation = Controller->GetControlRotation();
-		//const FRotator YawRotation(0, Rotation.Yaw, 0);
-
-		////左右方向の向きを取得する
-		//const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-		////繰り出す
-		//AddMovementInput(Direction, _axisValue);
-
 	}
-	//m_charaMoveInput.X = FMath::Clamp(_axisValue, -1.0f, 10000.0f) * 10000.0f;
-
-
 }
 
 //
@@ -488,11 +550,6 @@ void AMyCharacter::JumpStart()
 	}
 }
 
-//入力バインド　シュート
-void AMyCharacter::Shoot()
-{
-
-}
 
 //
 //担当：坂本
@@ -507,6 +564,8 @@ void AMyCharacter::TackleStart() {
 	//	m_bCanTackle = false;
 	//}
 }
+
+
 
 //
 //担当：坂本

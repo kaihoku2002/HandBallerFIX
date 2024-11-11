@@ -102,9 +102,17 @@ protected:
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-		float m_moveSpeed;	//タックルの速度
+		bool m_bIsHolding;	//ボールを保持しているか
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-		bool m_bIsHoleding;	//ボールを持っているかどうか
+		bool m_bCanHold;	//ボールを保持できる状態か
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool m_bThrowAnim;	//ボールを投げるアニメーション中か
+
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		float m_moveSpeed;	//タックルの速度
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		float m_TackleSpeed;	//タックルの速度
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -155,7 +163,7 @@ protected:
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-		USphereComponent* m_pSphereComp;	//アイテム接触用コリジョン
+		USphereComponent* m_pSphereComp;	//ボール接触用コリジョン
 
 
 };
