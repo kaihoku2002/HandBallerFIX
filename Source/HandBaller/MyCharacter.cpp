@@ -368,14 +368,21 @@ void AMyCharacter::ThrowBall()
 
 	//FVector fVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
 	FVector fThrowVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
+	UE_LOG(LogTemp, Log, TEXT("fThrowVector; %f,%f,%f "), fThrowVector.X, fThrowVector.Y, fThrowVector.Z);
 
-	FRotator fRotator(-30, 0, 0);
-	FVector fVector = fRotator.RotateVector(FVector(fThrowVector.X, fThrowVector.Y, 0.0f));
+	FRotator fRotator;
+	fRotator = FRotator(30, 0, 0);
+	
+	//FVector fVector = fRotator.RotateVector(FVector(fThrowVector.X, fThrowVector.Y, 0.0f));
+
+	FVector fVector = FVector(fThrowVector.X, fThrowVector.Y, 0.5f);
+
 	//FVector fVector = UKismetMathLibrary::MakeVector(30.f, m_pSpringArm->GetComponentRotation().Yaw, 0.f);
 
 	//fVector = fVector.RotateAngleAxis(50, (FVector(0, 0, 1)));
 	fVector *= THROW_POWER;
 
+	UE_LOG(LogTemp, Log, TEXT("fVector: %f,%f,%f "), fVector.X, fVector.Y, fVector.Z);
 	m_bThrowAnim = true;
 
 	m_pBall->m_pStaticMeshComp->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
