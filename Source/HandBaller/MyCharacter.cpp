@@ -27,7 +27,13 @@ AMyCharacter::AMyCharacter()
 	, m_charaMoveInput(FVector2D::ZeroVector)
 	, m_cameraRotateInput(FVector2D::ZeroVector)
 	, m_cameraPitchLimit(FVector2D(-40.0f, 55.0f))
-	, m_bCanControl(true)
+	, m_bGetBeforeLocationZ(false)
+	, m_bGetNowLocationZ(false)
+	, m_bShouldDownhill(false)
+	, m_NowDownhillTime(0)
+	, m_WaitGetLoacationTime(0)
+	, m_BeforeLocationZ(0.f)
+	, m_NowLocationZ(0.f)
 	, m_bOverlappedCPU(false)
 	, m_Overlaped_CPU(NULL)
 	//定数
@@ -39,21 +45,18 @@ AMyCharacter::AMyCharacter()
 	, MOVE_SPEED_MAX(200.f)
 	, MOVE_SPEED_MIDDLE(150.f)
 	, MOVE_SPEED_MIN(100.f)
-	, MOVE_SPEED_FALLING(120.f)
+	, MOVE_SPEED_FALLING(50.f)
+	, MOVE_SPEED_DOWNHILL(250.f)
 	, MOVE_ROTATE_MAX(10.f)
 	, MOVE_ROTATE_MIDDLE(5.f)
 	, MOVE_ROTATE_MIN(1.f)
-
+	, MOVE_BALL_HOLDING_RASIO(0.5f)
+	, GET_LOCATION_COOLTIME(50)
+	, DOWNHILL_POSSIBLE_TIME(50)
 {
 	//デフォルトプレイヤーとして設定
 	AutoPossessPlayer = EAutoReceiveInput::Player0;
 
-	//// カプセルコンポーネント
-	//if (GetCapsuleComponent() != nullptr)
-	//{
-	//	GetCapsuleComponent()->SetCapsuleHalfHeight(150.f);
-	//	GetCapsuleComponent()->SetCapsuleRadius(42.f);
-	//}
 
 	//スプリングアームのオブジェクトを生成
 	if (m_pSpringArm == NULL)
@@ -67,16 +70,6 @@ AMyCharacter::AMyCharacter()
 		// 位置と回転
 		m_pSpringArm->SetRelativeLocationAndRotation(FVector(0.f, 0.f, 100.f), FQuat(FRotator(0.f, 0.f, 0.f)));	// 位置と回転
 
-		////カメラのコリジョンテストを行うか設定
-		//m_pSpringArm->bDoCollisionTest = false;
-		////カメラ追従ラグを使うかを設定
-		//m_pSpringArm->bEnableCameraLag = false;
-		////カメラ追従ラグの速度を設定
-		//m_pSpringArm->CameraLagSpeed = 10.f;
-		////カメラ回転ラグを使うかを設定
-		//m_pSpringArm->bEnableCameraRotationLag = false;
-		////カメラ回転ラグの速度を設定
-		//m_pSpringArm->CameraRotationLagSpeed = 10.f;
 	}
 
 	//カメラのオブジェクと生成
@@ -104,12 +97,24 @@ void AMyCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (m_bShouldDownhill)
+	{
+		UE_LOG(LogTemp, Log, TEXT("playDownhill"));
+	}
+
 	////移動処理
 	UpdateMove(DeltaTime);
 	//カメラ更新処理
 	UpdateCamera(DeltaTime);
 	//ジャンプ処理
 	UpdateJump(DeltaTime);
+
+
+	//前回と前回のZ座標を設定する
+	SetBeforeNowLocationZ();
+
+	//前回と現在のZ座標を比較する
+	CompareLocationZ();
 
 	//タックル処理
 	if (m_bCanTackle != false) {
@@ -192,19 +197,29 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 	// 移動量
 	FVector NewVelocity = GetCharacterMovement()->Velocity;
 	float RotateVelocity = MOVE_ROTATE_MIDDLE;
+	float movement = 0.f;
 
 	// 移動方向の確定
 	FVector RightVec = m_pCamera->GetRightVector();
 	FVector ForwardVec = m_pCamera->GetForwardVector();
 
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+
 	ForwardVec.Z = 0.f;
 	ForwardVec.Normalize();
 
 	// 上下左右移動の反映
-		float movement = m_moveVec.Size();
+	if (m_bIsHolding)
+	{
+		movement = m_moveVec.Size() / MOVE_BALL_HOLDING_RASIO; 
+	}
+	else
+	{
+		movement = m_moveVec.Size();
+	}
 
-	// 空中時はスティックの移動量を抑える
-	if (GetCharacterMovement()->IsFalling())
+	// ジャンプ中はスティックの移動量を抑える
+	if (GetCharacterMovement()->IsFalling() || m_bJumping && movement >= 0.9f)
 	{
 		RotateVelocity = MOVE_ROTATE_MIDDLE;
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_FALLING * CorrectionValue;
@@ -218,6 +233,19 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 			NewVelocity.Y /= CurSpeed;
 			NewVelocity.Y *= MOVESPEED_MAX;
 		}
+	}
+	//坂を下っている時 かつ ボールを投げていない場合は加速する 
+	if (m_bShouldDownhill && !m_bThrowAnim)
+	{
+
+		//アニメーションを再生
+		AnimInstance->Montage_Play(DownhillMontage);
+		GetCharacterMovement()->GravityScale = 100.f;
+		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_DOWNHILL * CorrectionValue;
+		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_DOWNHILL * CorrectionValue;
+		RotateVelocity = MOVE_ROTATE_MAX;
+
+		ManageDownhill();
 
 	}
 	// 接地時
@@ -226,12 +254,14 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_MAX * CorrectionValue;
 		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_MAX * CorrectionValue;
 		RotateVelocity = MOVE_ROTATE_MAX;
+
 	}
 	else if (movement >= 0.5f)
 	{
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_MIDDLE * CorrectionValue;
 		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_MIDDLE * CorrectionValue;
 		RotateVelocity = MOVE_ROTATE_MIDDLE;
+
 	}
 	else
 	{
@@ -241,8 +271,6 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 	}	
 
 
-	// 値の反映
-	GetCharacterMovement()->Velocity = NewVelocity;
 
 
 	// メッシュの回転
@@ -251,9 +279,8 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 
 
 	// 移動している場合
-	if (m_moveVec.Size2D() > 0.5f)
+	if (movement > 0.5f)
 	{
-
 		//アークタンジェントを使ってコントローラーの入力方向がなす角度を求める
 		float moveAngleDeg = atan2(m_moveVec.X, m_moveVec.Y);
 		//Radian値をDegreeに変換
@@ -282,6 +309,10 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 
 		// 反映
 		pMeshComp->SetRelativeRotation(FRotator(rot.Pitch, newYaw, rot.Roll));
+
+		// 値の反映
+		GetCharacterMovement()->Velocity = NewVelocity;
+
 	}
 }
 
@@ -293,8 +324,6 @@ void AMyCharacter::UpdateJump(float _deltaTime)
 	//ジャンプ中フラグを確認してから
 	if (m_bJumping)
 	{
-		//アニメーションのために遅らせる
-		//
 		//ジャンプ量を計算
 		m_nowJumpHeight = JUMP_HEIGHT;
 
@@ -311,12 +340,6 @@ void AMyCharacter::UpdateJump(float _deltaTime)
 			m_jumpTime = 0.0f;
 
 		}
-		//if (GetCharacterMovement()->IsFalling() == false)
-		//{
-		//	m_bJumping = false;
-		//	m_jumpTime = 0.0f;
-
-		//}
 		else
 		{
 			//現在の座標にジャンプ量を足す
@@ -324,16 +347,7 @@ void AMyCharacter::UpdateJump(float _deltaTime)
 
 			//ジャンプ量を保持
 			m_prevJumpHeight = m_nowJumpHeight;
-
 		}
-
-		////現在の座標にジャンプ量を足す
-		//SetActorLocation(FVector(nowPos.X, nowPos.Y, m_posBeforeJump.Z + m_nowJumpHeight), true);
-
-		////ジャンプ量を保持
-		//m_prevJumpHeight = m_nowJumpHeight;
-
-
 	}
 }
 
@@ -347,13 +361,12 @@ void AMyCharacter::Throw()
 	if (!m_bIsHolding){
 		return;
 	}
-
-	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
-	{
+	else if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance()){
 		//投げるアニメーションを再生
+		m_bThrowAnim = true;
+
 		AnimInstance->Montage_Play(ThrowBallMontage);
 	}
-
 }
 
 
@@ -363,65 +376,27 @@ void AMyCharacter::Throw()
 //ボールを投げる処理
 void AMyCharacter::ThrowBall()
 {
-	//FVector fVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetForwardVector().Rotation());
-	//FVector fVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
-
-	//FVector fVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
 	FVector fThrowVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
-	UE_LOG(LogTemp, Log, TEXT("fThrowVector; %f,%f,%f "), fThrowVector.X, fThrowVector.Y, fThrowVector.Z);
-
-	FRotator fRotator;
-	fRotator = FRotator(30, 0, 0);
 	
-	//FVector fVector = fRotator.RotateVector(FVector(fThrowVector.X, fThrowVector.Y, 0.0f));
+	FVector fVector = FVector(fThrowVector.X, fThrowVector.Y, 0.35f);
 
-	FVector fVector = FVector(fThrowVector.X, fThrowVector.Y, 0.5f);
-
-	//FVector fVector = UKismetMathLibrary::MakeVector(30.f, m_pSpringArm->GetComponentRotation().Yaw, 0.f);
-
-	//fVector = fVector.RotateAngleAxis(50, (FVector(0, 0, 1)));
 	fVector *= THROW_POWER;
 
-	UE_LOG(LogTemp, Log, TEXT("fVector: %f,%f,%f "), fVector.X, fVector.Y, fVector.Z);
-	m_bThrowAnim = true;
 
 	m_pBall->m_pStaticMeshComp->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	m_pBall->ProjectileMovementComponent->SetActive(true);
 
 	m_pBall->m_pStaticMeshComp->SetSimulatePhysics(true);
 	m_pBall->m_pSphereComp->SetSimulatePhysics(false);
-	//m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 
 	m_pBall->ProjectileMovementComponent->SetUpdatedComponent(m_pBall->GetRootComponent());
 	m_pBall->m_pStaticMeshComp->SetPhysicsLinearVelocity(FVector::ZeroVector);
 
-	//m_pBall->ProjectileMovementComponent->SetVelocityInLocalSpace(fVector);
-
-
-
-
-	//m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	//m_pBall->SetActorEnableCollision(true);
-
-	//m_pBall->m_pStaticMeshComp->SetSimulatePhysics(true);
-	//m_pBall->m_pSphereComp->SetSimulatePhysics(false);
-
-	//m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	//m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-
-
-
-	//m_pBall->m_pStaticMeshComp->SetSimulatePhysics(true);
-	//m_pBall->m_pSphereComp->SetSimulatePhysics(true);
-	//m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	//m_pBall->SetActorEnableCollision(true);
-
-	
-	//SetActorRotation(FRotator(0.0f, m_pSpringArm->GetTargetRotation().Yaw, 0.0f), ETeleportType::ResetPhysics);
 	m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
 
 	m_pBall->m_pStaticMeshComp->AddImpulse(fVector);
-	//m_pBall->m_pStaticMeshComp->AddImpulse
+	
+	m_bIsHolding = false;
 }
 
 
@@ -430,12 +405,10 @@ void AMyCharacter::ThrowBall()
 //ボールを投げた後のフラグ変更処理
 void AMyCharacter::ChangeBallFlag()
 {
-	//m_bIsHolding = false;
 	m_bCanTackle = true;
 	m_bThrowAnim = false;
 	m_bCanHold = true;
 
-	//m_pBall->SetActorEnableCollision(true);
 
 	m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
@@ -449,6 +422,7 @@ void AMyCharacter::ChangeBallFlag()
 void AMyCharacter::OnSphereOverlapBegin(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
+
 	//ボール保持時とタックル中は、以下の処理を行わない
 	if (m_bIsHolding && m_bTackle){
 		return;
@@ -458,9 +432,16 @@ void AMyCharacter::OnSphereOverlapBegin(UPrimitiveComponent* OverlappedComponent
 	if (OtherActor && (OtherActor != this) && OtherComp) {
 		//オーバーラップしたのがCPUのときのみ反応させたい
 		if (OtherActor->ActorHasTag("Ball")) {
+			FAttachmentTransformRules attachmentTransformRules = FAttachmentTransformRules::KeepRelativeTransform;
+
+			attachmentTransformRules.LocationRule = EAttachmentRule::SnapToTarget;
+			attachmentTransformRules.RotationRule = EAttachmentRule::SnapToTarget;
+			attachmentTransformRules.ScaleRule = EAttachmentRule::KeepWorld;
+			attachmentTransformRules.bWeldSimulatedBodies = true;
+
 			//Ballを取得
 			m_pBall = Cast<ABall>(OtherActor);
-			m_pBall->AttachToComponent(GetMesh(), { EAttachmentRule::SnapToTarget, true }, "BallCatch");
+			m_pBall->AttachToComponent(GetMesh(), attachmentTransformRules, "BallCatch");
 
 			//ボールの挙動、コリジョンを変更
 			m_pBall->ProjectileMovementComponent->SetActive(false);
@@ -469,7 +450,6 @@ void AMyCharacter::OnSphereOverlapBegin(UPrimitiveComponent* OverlappedComponent
 			m_pBall->m_pSphereComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			m_pBall->m_pStaticMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-			//m_pBall->SetActorEnableCollision(false);
 
 			//フラグを設定
 			m_bIsHolding = true;
@@ -478,6 +458,90 @@ void AMyCharacter::OnSphereOverlapBegin(UPrimitiveComponent* OverlappedComponent
 		}
 	}
 }
+
+//担当：海北
+//
+//前回と前回のZ座標を設定する
+void AMyCharacter::SetBeforeNowLocationZ()
+{
+
+	if (!m_bJumping)
+	{
+		//ジャンプ中ではない
+		if (m_WaitGetLoacationTime == 1)
+		{
+			//Z座標を取得する
+			if (m_bGetBeforeLocationZ)
+			{
+				//現在の座標を取得する
+				m_NowLocationZ = GetActorLocation().Z;
+				m_bGetNowLocationZ = true;
+			}
+			else
+			{
+				//前回座標を取得する
+				m_BeforeLocationZ = GetActorLocation().Z;
+				m_bGetBeforeLocationZ = true;
+			}
+		}
+		else
+		{
+			if (m_WaitGetLoacationTime > GET_LOCATION_COOLTIME)
+			{
+				//タイマーリセット
+				m_WaitGetLoacationTime = 0;
+			}
+		}
+		m_WaitGetLoacationTime++;
+	}
+
+}
+
+//担当：海北
+//
+//前回と現在のZ座標を比較する
+void AMyCharacter::CompareLocationZ()
+{
+	//前回と現在のZ座標を取得しているか
+	if (m_bGetBeforeLocationZ && m_bGetNowLocationZ)
+	{
+		//前回のZ座標より現在のZ座標の方が低いか
+		if (m_BeforeLocationZ > m_NowLocationZ)
+		{
+			m_bShouldDownhill = true;
+		}
+		else
+		{
+			//値をリセット
+			m_NowLocationZ = 0.f;
+			m_bGetNowLocationZ = false;
+			m_BeforeLocationZ = 0.f;
+			m_bGetBeforeLocationZ = false;
+		}
+	}
+}
+
+
+//担当：海北
+//
+//前回と現在のZ座標を比較する
+void AMyCharacter::ManageDownhill()
+{
+
+	while (m_NowDownhillTime < DOWNHILL_POSSIBLE_TIME)
+	{
+		m_NowDownhillTime++;
+	}
+
+	m_bShouldDownhill = false;
+	//値をリセット
+	m_NowLocationZ = 0.f;
+	m_bGetNowLocationZ = false;
+	m_BeforeLocationZ = 0.f;
+	m_bGetBeforeLocationZ = false;
+	m_NowDownhillTime = 0;
+}
+
 
 //
 //担当：海北
@@ -512,8 +576,11 @@ void AMyCharacter::Chara_MoveForward(const float _axisValue)
 		bool isDeadZone = -MOVE_INVALIDRANGE <= _axisValue && _axisValue <= MOVE_INVALIDRANGE;
 		m_moveVec.Y = isDeadZone ? 0.f : _axisValue;
 
-		m_moveVec.Y = _axisValue;
-
+		//ボール保持時は速度低下
+		if (m_bIsHolding)
+		{
+			m_moveVec.Y = m_moveVec.Y * MOVE_BALL_HOLDING_RASIO;
+		}
 	}
 }
 
@@ -533,7 +600,11 @@ void AMyCharacter::Chara_MoveRight(float _axisValue)
 		bool isDeadZone = -MOVE_INVALIDRANGE <= _axisValue && _axisValue <= MOVE_INVALIDRANGE;
 		m_moveVec.X = isDeadZone ? 0.f : _axisValue;
 
-		m_moveVec.X = _axisValue;
+		//ボール保持時は速度低下
+		if (m_bIsHolding)
+		{
+			m_moveVec.X = m_moveVec.X * MOVE_BALL_HOLDING_RASIO;
+		}
 	}
 }
 

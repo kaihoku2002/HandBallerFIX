@@ -79,7 +79,7 @@ public:
 	float m_prevJumpHeight;		//前フレームのジャンプ量
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	bool m_bJumping;			//ジャンプ中のラグ
+	bool m_bJumping;			//ジャンプ中のフラグ
 
 	FVector m_posBeforeJump;	//ジャンプ開始前のキャラクター座標
 
@@ -93,7 +93,6 @@ public:
 		bool IsThrowing;
 
 protected:
-	bool m_bCanControl;		//操作可能な状態か？
 
 
 protected:
@@ -101,6 +100,10 @@ protected:
 	FVector2D m_cameraRotateInput;		//Pawn移動入力量
 
 public:
+
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool m_bCanControl;	//操作可能な状態か？
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool m_bIsHolding;	//ボールを保持しているか
 

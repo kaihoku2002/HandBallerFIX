@@ -42,8 +42,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
 		float BaseLookUpRate;
 private:
-	//入力バインド
-		//入力バインド カメラ回転：Pitch[Y軸]
+	//入力バインド カメラ回転：Pitch[Y軸]
 	virtual void Camera_RotatePitch(const float _axisValue);
 	//入力バインド カメラ回転：Yaw[X軸]
 	virtual void Camera_RotateYaw(const float _axisValue);
@@ -65,7 +64,6 @@ private:
 	virtual void TackleStart();
 
 
-	// 更新処理
 private:
 
 	//移動処理
@@ -76,15 +74,25 @@ private:
 	////タックル処理
 	//virtual void UpdateTackle();
 
+	//前回と現在のZ座標を設定する
+	void SetBeforeNowLocationZ();
+
+
+	//前回と現在のZ座標を比較する
+	void CompareLocationZ();
+	//坂を下る時間を管理する
+	void ManageDownhill();
 
 	// 移動処理用ベクトル
 	FVector m_moveVec;		// 移動用ベクトル
+
 
 
 public:
 	//------------------ボール処理-------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ball")
 	class UAnimMontage* ThrowBallMontage;
+
 
 	UFUNCTION(BlueprintCallable, Category = "Ball")
 	void ThrowBall();
@@ -115,7 +123,27 @@ private:
 	FVector2D m_charaMoveInput;		//Pawn移動入力量
 	FVector2D m_cameraRotateInput;		//Pawn移動入力量
 
-	bool m_bCanControl;		//操作可能な状態か？
+
+
+
+	//------------------坂を下る処理-------------------------
+
+	bool m_bGetBeforeLocationZ;		//前回取得したZ座標を取得しているか
+	bool m_bGetNowLocationZ;		//現在のZ座標を取得しているか
+	bool m_bShouldDownhill;			//坂を下るべきか
+
+	int	m_NowDownhillTime;			//坂を下っている時間
+	int m_WaitGetLoacationTime;		//座標を取得するのに待っている時間
+
+	float m_BeforeLocationZ;		//前回取得したZ座標
+	float m_NowLocationZ;			//現在の取得したZ座標
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Downhill")
+		class UAnimMontage* DownhillMontage;
+
+	//------------------坂を下る処理-------------------------
+
 
 protected:
 	//オーバーラップ接触し始めた時に呼ばれるイベント関数を登録
@@ -127,6 +155,9 @@ protected:
 			UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 public:
+
+
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool m_bOverlappedCPU;	//CPUとOverlapしているかどうか
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -163,11 +194,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
 		float MOVE_SPEED_FALLING;	// 移動速度(空中時)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
+		float MOVE_SPEED_DOWNHILL;	// 坂を下っている時の移動速度
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
 		float MOVE_ROTATE_MAX;		// 回転速度(空中時)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
 		float MOVE_ROTATE_MIDDLE;	// 回転速度(空中時)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
 		float MOVE_ROTATE_MIN;		// 回転速度(空中時)	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
+		float MOVE_BALL_HOLDING_RASIO;	// ボールを保持時の移動速度倍率
 
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Time")
+		int GET_LOCATION_COOLTIME;	// 座標を取得するクールタイム	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Time")
+		int DOWNHILL_POSSIBLE_TIME;	// 坂を下ることができる時間
 };
