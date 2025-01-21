@@ -101,8 +101,8 @@ protected:
 
 public:
 
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool m_bCanControl;	//操作可能な状態か？
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+		bool m_bCanControl;	//操作可能な状態か？
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 		bool m_bIsHolding;	//ボールを保持しているか

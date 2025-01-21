@@ -208,6 +208,11 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 	ForwardVec.Z = 0.f;
 	ForwardVec.Normalize();
 
+	if (!m_bCanControl)
+	{
+		return;
+	}
+
 	// 上下左右移動の反映
 	if (m_bIsHolding)
 	{
@@ -321,6 +326,11 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 //
 void AMyCharacter::UpdateJump(float _deltaTime)
 {
+	if (!m_bCanControl)
+	{
+		return;
+	}
+
 	//ジャンプ中フラグを確認してから
 	if (m_bJumping)
 	{
@@ -568,7 +578,11 @@ void AMyCharacter::Camera_RotateYaw(float _axisValue)
 void AMyCharacter::Chara_MoveForward(const float _axisValue)
 {
 	//コントール可能な場合のみ
-	if (m_bCanControl == false) { return; }
+	if (m_bCanControl == false)
+	{
+		m_moveVec.Y = 0.0f;
+		return; 
+	}
 
 	if ((Controller != NULL) && (_axisValue != 0.0f))
 	{
@@ -592,7 +606,11 @@ void AMyCharacter::Chara_MoveForward(const float _axisValue)
 void AMyCharacter::Chara_MoveRight(float _axisValue)
 {
 	//コントール可能な場合のみ
-	if (m_bCanControl == false) { return; }
+	if (m_bCanControl == false)
+	{
+		m_moveVec.X = 0.0f;
+		return;
+	}
 
 	if ((Controller != NULL) && (_axisValue != 0.0f))
 	{
