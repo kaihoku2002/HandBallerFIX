@@ -33,14 +33,6 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-public:
-	/** Base turn rate, in deg/sec. Other scaling may affect final turn rate. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-		float BaseTurnRate;
-
-	/** Base look up/down rate, in deg/sec. Other scaling may affect final rate. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-		float BaseLookUpRate;
 private:
 	//入力バインド カメラ回転：Pitch[Y軸]
 	virtual void Camera_RotatePitch(const float _axisValue);
@@ -173,14 +165,13 @@ public:
 protected:
 	// プレイヤーの定数--------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
-		float GRAVITY;				// 重力
+		float PLAYER_GRAVITY;				// 重力
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
-		float FALLSPEED_MAX;		// Z方向の最大速度
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
-		float MOVESPEED_MAX;		// X-Y方向の最大移動速度
+		float MOVE_SPEED_LIMIT;		// 移動速度の上限
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
 		float THROW_POWER;				// 投げる力
-
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Player")
+		float THROW_ANGLE;		// Z軸上の投げる角度
 
 	// 移動						
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
@@ -203,6 +194,13 @@ protected:
 		float MOVE_ROTATE_MIN;		// 回転速度(空中時)	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
 		float MOVE_BALL_HOLDING_RASIO;	// ボールを保持時の移動速度倍率
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
+		float MOVE_INPUT_THRESHOLD_MAX;	// 移動速度(最大)に対応する入力閾値
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Move")
+		float MOVE_INPUT_THRESHOLD_MIDDLE;	// 移動速度(第二段階)に対応する入力閾値
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Camera")
+		float CAMERA_CORRECTION;	// カメラ移動の補正値
 
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "ConstantData|Time")

@@ -13,8 +13,14 @@
 
 
 
-#define JUMP_HEIGHT (m_jumpTime * m_jumpTime * (-m_gravity) / 2 + (m_jumpTime * m_jumpPower))
-#define SET_JUMP_TIME 0.5
+#define JUMP_HEIGHT (m_jumpTime * m_jumpTime * (-m_gravity) / 2 + (m_jumpTime * m_jumpPower))	// ジャンプの高さを決める計算式
+#define SET_JUMP_TIME 0.5		// ジャンプ状態の時間
+#define CORRECTION_FPS 60.0f	// FPS補正用の値
+#define ARM_LENGTH 400.0f		// スプリングアームの長さ
+#define ARM_ANGLE_Z 100.0f		// Z軸上のスプリングアームの角度
+#define DEG_FULL_ROTATION 360.0f	// 回転差分の正規化
+#define DEG_HALF_ROTATION 180.0f	// 回転差分の正規化
+#define YAW_DIRECTION_OFFSET 180.0f	// メッシュの回転オフセット
 
 //
 //担当：海北
@@ -37,10 +43,10 @@ AMyCharacter::AMyCharacter()
 	, m_bOverlappedCPU(false)
 	, m_Overlaped_CPU(NULL)
 	//定数
-	, GRAVITY(-100.f)
-	, FALLSPEED_MAX(-3000.f)
-	, MOVESPEED_MAX(1500.f)
+	, PLAYER_GRAVITY(100.f)
+	, MOVE_SPEED_LIMIT(1500.f)
 	, THROW_POWER(2000.f)
+	, THROW_ANGLE(0.35f)
 	, MOVE_INVALIDRANGE(0.001f)
 	, MOVE_SPEED_MAX(200.f)
 	, MOVE_SPEED_MIDDLE(150.f)
@@ -51,6 +57,9 @@ AMyCharacter::AMyCharacter()
 	, MOVE_ROTATE_MIDDLE(5.f)
 	, MOVE_ROTATE_MIN(1.f)
 	, MOVE_BALL_HOLDING_RASIO(0.5f)
+	, MOVE_INPUT_THRESHOLD_MAX(0.9f)
+	, MOVE_INPUT_THRESHOLD_MIDDLE(0.5f)
+	, CAMERA_CORRECTION(3.0f)
 	, GET_LOCATION_COOLTIME(50)
 	, DOWNHILL_POSSIBLE_TIME(50)
 {
@@ -66,9 +75,9 @@ AMyCharacter::AMyCharacter()
 		m_pSpringArm->SetupAttachment(GetCapsuleComponent());
 
 		//アームの長さを設定
-		m_pSpringArm->TargetArmLength = 400.f;
+		m_pSpringArm->TargetArmLength = ARM_LENGTH;
 		// 位置と回転
-		m_pSpringArm->SetRelativeLocationAndRotation(FVector(0.f, 0.f, 100.f), FQuat(FRotator(0.f, 0.f, 0.f)));	// 位置と回転
+		m_pSpringArm->SetRelativeLocationAndRotation(FVector(0.f, 0.f, ARM_ANGLE_Z), FQuat(FRotator(0.f, 0.f, 0.f)));	// 位置と回転
 
 	}
 
@@ -84,8 +93,6 @@ AMyCharacter::AMyCharacter()
 
 	//m_pSphereCompにオーバーラップした時の処理を登録
 	m_pSphereComp->OnComponentBeginOverlap.AddDynamic(this, &AMyCharacter::OnSphereOverlapBegin);
-
-	BaseTurnRate = 75.f;
 }
 
 void AMyCharacter::BeginPlay()
@@ -167,7 +174,7 @@ void AMyCharacter::UpdateCamera(float DeltaTime)
 
 		//スローモードにする時は遅くする
 		//処理落ちしても、一定速度でカメラが回るように設定
-		float rotateCorrection = 60.f / fps;
+		float rotateCorrection = CORRECTION_FPS / fps;
 
 		//カメラの新しい角度を求める
 		//現在の角度を取得
@@ -192,7 +199,7 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 {
 	// 現在のFPSから補正値の設定
 	float fps = 1.0f / DeltaTime;
-	float CorrectionValue = 60.f / fps;
+	float CorrectionValue = CORRECTION_FPS / fps;
 
 	// 移動量
 	FVector NewVelocity = GetCharacterMovement()->Velocity;
@@ -224,19 +231,20 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 	}
 
 	// ジャンプ中はスティックの移動量を抑える
-	if (GetCharacterMovement()->IsFalling() || m_bJumping && movement >= 0.9f)
+	if (GetCharacterMovement()->IsFalling() || m_bJumping && movement >= MOVE_INPUT_THRESHOLD_MAX)
 	{
 		RotateVelocity = MOVE_ROTATE_MIDDLE;
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_FALLING * CorrectionValue;
 		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_FALLING * CorrectionValue;
 		float CurSpeed = NewVelocity.Size2D();
 
-		if (CurSpeed > MOVESPEED_MAX)
+		if (CurSpeed > MOVE_SPEED_LIMIT)
 		{
+			// 移動速度の上限を超えた為、移動量を調整する
 			NewVelocity.X /= CurSpeed;
-			NewVelocity.X *= MOVESPEED_MAX;
+			NewVelocity.X *= MOVE_SPEED_LIMIT;
 			NewVelocity.Y /= CurSpeed;
-			NewVelocity.Y *= MOVESPEED_MAX;
+			NewVelocity.Y *= MOVE_SPEED_LIMIT;
 		}
 	}
 	//坂を下っている時 かつ ボールを投げていない場合は加速する 
@@ -245,7 +253,7 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 
 		//アニメーションを再生
 		AnimInstance->Montage_Play(DownhillMontage);
-		GetCharacterMovement()->GravityScale = 100.f;
+		GetCharacterMovement()->GravityScale = PLAYER_GRAVITY;
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_DOWNHILL * CorrectionValue;
 		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_DOWNHILL * CorrectionValue;
 		RotateVelocity = MOVE_ROTATE_MAX;
@@ -254,14 +262,14 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 
 	}
 	// 接地時
-	else if (movement >= 0.9f)
+	else if (movement >= MOVE_INPUT_THRESHOLD_MAX)
 	{
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_MAX * CorrectionValue;
 		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_MAX * CorrectionValue;
 		RotateVelocity = MOVE_ROTATE_MAX;
 
 	}
-	else if (movement >= 0.5f)
+	else if (movement >= MOVE_INPUT_THRESHOLD_MIDDLE)
 	{
 		NewVelocity += RightVec * m_moveVec.X * MOVE_SPEED_MIDDLE * CorrectionValue;
 		NewVelocity += ForwardVec * m_moveVec.Y * MOVE_SPEED_MIDDLE * CorrectionValue;
@@ -284,7 +292,7 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 
 
 	// 移動している場合
-	if (movement > 0.5f)
+	if (movement > MOVE_INPUT_THRESHOLD_MIDDLE)
 	{
 		//アークタンジェントを使ってコントローラーの入力方向がなす角度を求める
 		float moveAngleDeg = atan2(m_moveVec.X, m_moveVec.Y);
@@ -292,22 +300,22 @@ void AMyCharacter::UpdateMove(float DeltaTime)
 		float angleDeg = FMath::RadiansToDegrees(moveAngleDeg);
 
 		//入力した角度 + メッシュの回転角度 + Actorに対して回転しているSpringArmの相対角度
-		float newYaw = angleDeg + GetBaseRotationOffsetRotator().Yaw + m_pSpringArm->GetRelativeRotation().Yaw + 180.0;
+		float newYaw = angleDeg + GetBaseRotationOffsetRotator().Yaw + m_pSpringArm->GetRelativeRotation().Yaw + YAW_DIRECTION_OFFSET;
 
 		float difference = newYaw - rot.Yaw;
 
 		// 補正
 		if (difference < 0.f)
 		{
-			difference += 360.f;
+			difference += DEG_FULL_ROTATION;
 		}
 
 		// 最大回転速度を上回るスピードで回転しようとする場合、制限する
-		if (RotateVelocity < difference && difference <= 180.f)
+		if (RotateVelocity < difference && difference <= DEG_HALF_ROTATION)
 		{
 			newYaw = rot.Yaw + RotateVelocity * CorrectionValue;
 		}
-		else if (180.f < difference && difference < 360.f - RotateVelocity)
+		else if (DEG_HALF_ROTATION < difference && difference < DEG_FULL_ROTATION - RotateVelocity)
 		{
 			newYaw = rot.Yaw - RotateVelocity * CorrectionValue;
 		}
@@ -388,7 +396,7 @@ void AMyCharacter::ThrowBall()
 {
 	FVector fThrowVector = UKismetMathLibrary::GetForwardVector(m_pSpringArm->GetComponentRotation());
 	
-	FVector fVector = FVector(fThrowVector.X, fThrowVector.Y, 0.35f);
+	FVector fVector = FVector(fThrowVector.X, fThrowVector.Y, THROW_ANGLE);
 
 	fVector *= THROW_POWER;
 
@@ -559,7 +567,7 @@ void AMyCharacter::ManageDownhill()
 //入力バインド カメラ回転：Pitch(Y軸)
 void AMyCharacter::Camera_RotatePitch(float _axisValue)
 {
-	m_cameraRotateInput.Y = -_axisValue * 3.0f;
+	m_cameraRotateInput.Y = -_axisValue * CAMERA_CORRECTION;
 }
 
 //
@@ -568,7 +576,7 @@ void AMyCharacter::Camera_RotatePitch(float _axisValue)
 //入力バインド カメラ回転：Yaw(Z軸)
 void AMyCharacter::Camera_RotateYaw(float _axisValue)
 {
-	m_cameraRotateInput.X = _axisValue * 3.0f;
+	m_cameraRotateInput.X = _axisValue * CAMERA_CORRECTION;
 }
 
 //
